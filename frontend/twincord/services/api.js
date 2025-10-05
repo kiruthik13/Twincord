@@ -141,6 +141,37 @@ export const statsAPI = {
       throw error.response?.data || { success: false, error: 'Server not responding' };
     }
   },
+  // Subscribe to realtime stats via SSE; returns unsubscribe function
+  subscribe: (onMessage, onError) => {
+    // Convert baseURL to absolute for EventSource
+    const url = `${BASE_URL}/stats/stream`;
+    let es;
+    try {
+      es = new EventSource(url);
+    } catch (e) {
+      if (onError) onError(e);
+      return () => {};
+    }
+    es.onmessage = (evt) => {
+      try {
+        const payload = JSON.parse(evt.data);
+        onMessage && onMessage(payload);
+      } catch (_) {}
+    };
+    es.addEventListener('stats', (evt) => {
+      try {
+        const payload = JSON.parse(evt.data);
+        onMessage && onMessage(payload);
+      } catch (_) {}
+    });
+    es.onerror = (err) => {
+      onError && onError(err);
+      // browsers auto-reconnect; keep it simple here
+    };
+    return () => {
+      try { es && es.close(); } catch (_) {}
+    };
+  },
 };
 
 // Community APIs

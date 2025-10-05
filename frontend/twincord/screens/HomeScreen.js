@@ -127,20 +127,25 @@ const HomeScreen = ({ navigation }) => {
   useEffect(() => {
     let isMounted = true;
     let intervalId;
+    let unsubscribe = () => {};
+
+    const applyStats = (payload) => {
+      if (!payload?.success) return;
+      const data = payload.data || {};
+      if (isMounted) {
+        setStats({
+          activeChats: data.totalCommunities || 0,
+          meetingsToday: data.meetingsToday || 0,
+          onlineUsers: data.onlineUsers || 0,
+        });
+      }
+    };
 
     const loadStats = async () => {
       try {
         setLoadingStats(true);
         const resp = await statsAPI.getStats();
-        if (!resp?.success) return;
-        const data = resp.data || {};
-        if (isMounted) {
-          setStats({
-            activeChats: data.totalCommunities || 0,
-            meetingsToday: data.meetingsToday || 0,
-            onlineUsers: data.onlineUsers || 0,
-          });
-        }
+        applyStats(resp);
       } catch (e) {
         // silently fail
       } finally {
@@ -148,12 +153,26 @@ const HomeScreen = ({ navigation }) => {
       }
     };
 
+    // initial load
     loadStats();
-    intervalId = setInterval(loadStats, 15000);
+
+    // try realtime subscription (SSE)
+    try {
+      unsubscribe = statsAPI.subscribe(applyStats, () => {
+        // fallback to polling if SSE fails
+        if (!intervalId) {
+          intervalId = setInterval(loadStats, 15000);
+        }
+      });
+    } catch (_) {
+      // fallback to polling
+      intervalId = setInterval(loadStats, 15000);
+    }
 
     return () => {
       isMounted = false;
       if (intervalId) clearInterval(intervalId);
+      try { unsubscribe && unsubscribe(); } catch (_) {}
     };
   }, []);
 
